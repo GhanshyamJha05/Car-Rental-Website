@@ -41,11 +41,8 @@ Copy `.env.example` to `.env`:
 cp .env.example .env
 ```
 
-Update `MONGODB_URI` in `.env` with your connection string:
+Update `MONGODB_URI` in `.env` with your connection string
 
-```env
-MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/car_rental?retryWrites=true&w=majority
-```
 
 ### Step 6: Test Connection
 
