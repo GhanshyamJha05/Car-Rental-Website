@@ -1,0 +1,83 @@
+version: '3.8'
+
+services:
+  # MongoDB Database
+  mongodb:
+    image: mongo:7.0
+    container_name: car-rental-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password
+      MONGO_INITDB_DATABASE: car_rental
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - car-rental-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: car-rental-backend
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      MONGODB_URI: mongodb://admin:password@mongodb:27017/car_rental?authSource=admin
+      JWT_SECRET: ${JWT_SECRET:-change-this-secret-key}
+      JWT_EXPIRES_IN: 7d
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET}
+      PLATFORM_COMMISSION_RATE: 0.15
+      FRONTEND_URL: http://localhost:3000
+      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - car-rental-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Frontend
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    container_name: car-rental-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:5000/api
+      NEXT_PUBLIC_SOCKET_URL: http://localhost:5000
+      NEXT_PUBLIC_APP_URL: http://localhost:3000
+      NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY}
+      NEXT_PUBLIC_GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY}
+    depends_on:
+      - backend
+    networks:
+      - car-rental-network
+
+volumes:
+  mongodb_data:
+
+networks:
+  car-rental-network:
+    driver: bridge
