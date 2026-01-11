@@ -21,11 +21,9 @@ Copy `.env.example` to `.env`:
 cp .env.example .env
 ```
 
-Update the connection string in `.env`:
+Update the connection string in `.env`
 
-```env
-MONGODB_URI=mongodb+srv://username:password@cluster.mongodb.net/car_rental?retryWrites=true&w=majority
-```
+
 
 Replace:
 - `username` with your MongoDB Atlas username
