@@ -107,6 +107,39 @@ router.get(
   }
 );
 
+// @route   GET /api/cars/vendor
+// @desc    Get all cars for current vendor
+// @access  Private (VENDOR)
+router.get('/vendor', protect, authorize('VENDOR'), async (req, res) => {
+  try {
+    const { page = 1, limit = 20 } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const cars = await Car.find({ vendor: req.user._id })
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(parseInt(limit))
+      .lean();
+
+    const total = await Car.countDocuments({ vendor: req.user._id });
+
+    res.json({
+      success: true,
+      count: cars.length,
+      total,
+      page: parseInt(page),
+      pages: Math.ceil(total / parseInt(limit)),
+      data: cars,
+    });
+  } catch (error) {
+    console.error('Get vendor cars error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error',
+    });
+  }
+});
+
 // @route   GET /api/cars/:id
 // @desc    Get single car
 // @access  Public

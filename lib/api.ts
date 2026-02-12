@@ -34,9 +34,9 @@ class ApiClient {
     options: RequestInit = {}
   ): Promise<ApiResponse<T>> {
     const url = `${this.baseURL}${endpoint}`;
-    const headers: HeadersInit = {
+    const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      ...options.headers,
+      ...((options.headers as Record<string, string>) || {}),
     };
 
     if (this.token) {
@@ -134,6 +134,18 @@ export const carsApi = {
   },
 
   getById: (id: string) => apiClient.get<any>(`/cars/${id}`),
+
+  getVendorCars: (params?: { page?: number; limit?: number }) => {
+    const query = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          query.append(key, value.toString());
+        }
+      });
+    }
+    return apiClient.get<{ data: any[]; total: number }>(`/cars/vendor?${query.toString()}`);
+  },
 
   create: (data: any) => apiClient.post('/cars', data),
 

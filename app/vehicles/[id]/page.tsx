@@ -4,24 +4,46 @@ import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { FiStar, FiMapPin, FiUsers, FiCalendar, FiCheck, FiArrowLeft } from 'react-icons/fi'
-import { mockVehicles } from '@/lib/mockData'
-import { Vehicle } from '@/types'
+import { carsApi, bookingsApi, paymentsApi } from '@/lib/api'
+import { Vehicle, Booking } from '@/types'
 import { useStore } from '@/store/useStore'
 
 export default function VehicleDetailPage() {
   const params = useParams()
   const router = useRouter()
-  const { user, addBooking } = useStore()
+  const { user } = useStore()
   const [vehicle, setVehicle] = useState<Vehicle | null>(null)
+  const [loading, setLoading] = useState(true)
   const [selectedImageIndex, setSelectedImageIndex] = useState(0)
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
-  const [showBookingModal, setShowBookingModal] = useState(false)
+  const [isBooking, setIsBooking] = useState(false)
+  const [error, setError] = useState('')
 
   useEffect(() => {
-    const foundVehicle = mockVehicles.find(v => v.id === params.id)
-    setVehicle(foundVehicle || null)
+    const fetchVehicle = async () => {
+      setLoading(true)
+      try {
+        const response = await carsApi.getById(params.id as string)
+        if (response.success && response.data) {
+          setVehicle(response.data as any)
+        }
+      } catch (err) {
+        console.error('Error fetching vehicle:', err)
+      } finally {
+        setLoading(false)
+      }
+    }
+    if (params.id) fetchVehicle()
   }, [params.id])
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="w-16 h-16 border-4 border-primary-600 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    )
+  }
 
   if (!vehicle) {
     return (
@@ -51,34 +73,57 @@ export default function VehicleDetailPage() {
   }
 
   const calculateTotal = () => {
-    return vehicle.price * calculateDays()
+    return (vehicle.pricePerDay || 0) * calculateDays()
   }
 
-  const handleBook = () => {
+  const handleBook = async () => {
     if (!user) {
-      router.push('/auth/login?redirect=/vehicles/' + vehicle.id)
+      router.push(`/auth/login?redirect=/vehicles/${vehicle._id}`)
       return
     }
 
     if (!startDate || !endDate) {
-      alert('Please select start and end dates')
+      setError('Please select start and end dates')
       return
     }
 
-    const booking = {
-      id: Date.now().toString(),
-      vehicleId: vehicle.id,
-      vehicle,
-      userId: user.id,
-      startDate,
-      endDate,
-      totalPrice: calculateTotal(),
-      status: 'pending' as const,
-      createdAt: new Date().toISOString(),
-    }
+    setIsBooking(true)
+    setError('')
 
-    addBooking(booking)
-    setShowBookingModal(true)
+    try {
+      const bookingRes = await bookingsApi.create({
+        car: vehicle._id,
+        startDate: new Date(startDate).toISOString(),
+        endDate: new Date(endDate).toISOString(),
+      })
+
+      if (bookingRes.success && bookingRes.data) {
+        const booking = bookingRes.data as Booking
+
+        // Create payment session
+        const protocol = window.location.protocol
+        const host = window.location.host
+        const baseUrl = `${protocol}//${host}`
+
+        const paymentRes = await paymentsApi.createSession({
+          bookingId: booking._id,
+          successUrl: `${baseUrl}/dashboard?booking=success`,
+          cancelUrl: `${baseUrl}/vehicles/${vehicle._id}?booking=cancelled`,
+        })
+
+        if (paymentRes.success && paymentRes.data?.url) {
+          window.location.href = paymentRes.data.url
+        } else {
+          router.push('/dashboard?booking=pending')
+        }
+      } else {
+        setError(bookingRes.message || 'Failed to create booking')
+      }
+    } catch (err: any) {
+      setError(err.message || 'An error occurred during booking')
+    } finally {
+      setIsBooking(false)
+    }
   }
 
   return (
@@ -103,14 +148,18 @@ export default function VehicleDetailPage() {
             {/* Images */}
             <div className="bg-white rounded-xl shadow-md overflow-hidden">
               <div className="relative h-96 md:h-[500px] bg-gray-200">
-                <Image
-                  src={vehicle.images[selectedImageIndex]}
-                  alt={`${vehicle.make} ${vehicle.model}`}
-                  fill
-                  className="object-cover"
-                  sizes="(max-width: 1024px) 100vw, 66vw"
-                  priority
-                />
+                {vehicle.images[selectedImageIndex] ? (
+                  <Image
+                    src={vehicle.images[selectedImageIndex]}
+                    alt={`${vehicle.make} ${vehicle.model}`}
+                    fill
+                    className="object-cover"
+                    sizes="(max-width: 1024px) 100vw, 66vw"
+                    priority
+                  />
+                ) : (
+                  <div className="flex items-center justify-center h-full text-gray-400 font-bold">No Image Available</div>
+                )}
               </div>
               {vehicle.images.length > 1 && (
                 <div className="p-4 grid grid-cols-4 gap-4">
@@ -118,11 +167,10 @@ export default function VehicleDetailPage() {
                     <button
                       key={index}
                       onClick={() => setSelectedImageIndex(index)}
-                      className={`relative h-20 rounded-lg overflow-hidden border-2 transition-all ${
-                        selectedImageIndex === index
+                      className={`relative h-20 rounded-lg overflow-hidden border-2 transition-all ${selectedImageIndex === index
                           ? 'border-primary-600'
                           : 'border-transparent hover:border-gray-300'
-                      }`}
+                        }`}
                     >
                       <Image
                         src={image}
@@ -141,36 +189,31 @@ export default function VehicleDetailPage() {
             <div className="bg-white rounded-xl shadow-md p-6 md:p-8">
               <div className="flex flex-col md:flex-row justify-between items-start mb-6">
                 <div>
-                  <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2">
+                  <h1 className="text-3xl md:text-4xl font-bold text-gray-900 mb-2 text-capitalize">
                     {vehicle.make} {vehicle.model} {vehicle.year}
                   </h1>
                   <div className="flex items-center space-x-4 text-gray-600">
                     <div className="flex items-center space-x-1">
                       <FiMapPin className="w-5 h-5" />
-                      <span>{vehicle.location}</span>
-                    </div>
-                    <div className="flex items-center space-x-1">
-                      <FiStar className="w-5 h-5 text-yellow-400 fill-yellow-400" />
-                      <span className="font-semibold">{vehicle.rating}</span>
-                      <span>({vehicle.reviewCount} reviews)</span>
+                      <span>{vehicle.location?.address?.city}, {vehicle.location?.address?.state}</span>
                     </div>
                   </div>
                 </div>
                 <div className="text-right mt-4 md:mt-0">
-                  <div className="text-4xl font-bold text-gray-900">${vehicle.price}</div>
+                  <div className="text-4xl font-bold text-gray-900">${vehicle.pricePerDay}</div>
                   <div className="text-gray-500">per day</div>
                 </div>
               </div>
 
               <div className="border-t border-gray-200 pt-6 mb-6">
                 <h2 className="text-2xl font-bold text-gray-900 mb-4">Description</h2>
-                <p className="text-gray-700 leading-relaxed">{vehicle.description}</p>
+                <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">{vehicle.description}</p>
               </div>
 
               <div className="border-t border-gray-200 pt-6">
                 <h2 className="text-2xl font-bold text-gray-900 mb-4">Features</h2>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                  {vehicle.features.map((feature, index) => (
+                  {vehicle.features?.map((feature, index) => (
                     <div key={index} className="flex items-center space-x-2">
                       <FiCheck className="w-5 h-5 text-primary-600" />
                       <span className="text-gray-700">{feature}</span>
@@ -178,38 +221,6 @@ export default function VehicleDetailPage() {
                   ))}
                 </div>
               </div>
-
-              {vehicle.mileage && (
-                <div className="border-t border-gray-200 pt-6 mt-6">
-                  <h2 className="text-2xl font-bold text-gray-900 mb-4">Specifications</h2>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                    {vehicle.mileage && (
-                      <div>
-                        <div className="text-sm text-gray-500">Mileage</div>
-                        <div className="text-lg font-semibold text-gray-900">{vehicle.mileage.toLocaleString()} mi</div>
-                      </div>
-                    )}
-                    {vehicle.fuelType && (
-                      <div>
-                        <div className="text-sm text-gray-500">Fuel Type</div>
-                        <div className="text-lg font-semibold text-gray-900 capitalize">{vehicle.fuelType}</div>
-                      </div>
-                    )}
-                    {vehicle.transmission && (
-                      <div>
-                        <div className="text-sm text-gray-500">Transmission</div>
-                        <div className="text-lg font-semibold text-gray-900 capitalize">{vehicle.transmission}</div>
-                      </div>
-                    )}
-                    {vehicle.seats && (
-                      <div>
-                        <div className="text-sm text-gray-500">Seats</div>
-                        <div className="text-lg font-semibold text-gray-900">{vehicle.seats}</div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
             </div>
           </div>
 
@@ -217,8 +228,14 @@ export default function VehicleDetailPage() {
           <div className="lg:col-span-1">
             <div className="bg-white rounded-xl shadow-md p-6 sticky top-24">
               <h2 className="text-2xl font-bold text-gray-900 mb-6">Book This Vehicle</h2>
-              
+
               <div className="space-y-4">
+                {error && (
+                  <div className="bg-red-50 text-red-700 p-3 rounded-lg text-sm border border-red-200">
+                    {error}
+                  </div>
+                )}
+
                 <div>
                   <label className="block text-sm font-semibold text-gray-700 mb-2">
                     <FiCalendar className="inline w-4 h-4 mr-1" />
@@ -229,7 +246,7 @@ export default function VehicleDetailPage() {
                     value={startDate}
                     onChange={(e) => setStartDate(e.target.value)}
                     min={new Date().toISOString().split('T')[0]}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                   />
                 </div>
                 <div>
@@ -242,14 +259,14 @@ export default function VehicleDetailPage() {
                     value={endDate}
                     onChange={(e) => setEndDate(e.target.value)}
                     min={startDate || new Date().toISOString().split('T')[0]}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
                   />
                 </div>
 
                 {startDate && endDate && (
                   <div className="border-t border-gray-200 pt-4 space-y-2">
                     <div className="flex justify-between text-gray-700">
-                      <span>${vehicle.price} × {calculateDays()} days</span>
+                      <span>${vehicle.pricePerDay} × {calculateDays()} days</span>
                       <span>${calculateTotal()}</span>
                     </div>
                     <div className="flex justify-between text-lg font-bold text-gray-900 pt-2 border-t border-gray-200">
@@ -261,22 +278,34 @@ export default function VehicleDetailPage() {
 
                 <button
                   onClick={handleBook}
-                  className="w-full bg-primary-600 hover:bg-primary-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors mt-4"
+                  disabled={isBooking || !vehicle.availability}
+                  className="w-full bg-primary-600 hover:bg-primary-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors mt-4 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {user ? 'Book Now' : 'Sign In to Book'}
+                  {isBooking ? (
+                    <div className="flex items-center justify-center">
+                      <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2"></div>
+                      Processing...
+                    </div>
+                  ) : !vehicle.availability ? (
+                    'Not Available'
+                  ) : user ? (
+                    'Book & Pay Now'
+                  ) : (
+                    'Sign In to Book'
+                  )}
                 </button>
               </div>
 
-              <div className="mt-6 p-4 bg-gray-50 rounded-lg">
+              <div className="mt-6 p-4 bg-gray-50 rounded-lg text-gray-900">
                 <div className="flex items-start space-x-3">
                   <div className="flex-shrink-0">
                     <div className="w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center">
                       <FiCheck className="w-5 h-5 text-primary-600" />
                     </div>
                   </div>
-                  <div className="text-sm text-gray-700">
-                    <div className="font-semibold mb-1">Free cancellation</div>
-                    <div className="text-gray-600">Cancel up to 24 hours before pickup</div>
+                  <div className="text-sm">
+                    <div className="font-semibold mb-1">Instant Confirmation</div>
+                    <div className="text-gray-600">Secure your booking instantly with Stripe</div>
                   </div>
                 </div>
               </div>
@@ -284,41 +313,6 @@ export default function VehicleDetailPage() {
           </div>
         </div>
       </div>
-
-      {/* Booking Success Modal */}
-      {showBookingModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl p-8 max-w-md w-full">
-            <div className="text-center">
-              <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <FiCheck className="w-8 h-8 text-green-600" />
-              </div>
-              <h2 className="text-2xl font-bold text-gray-900 mb-2">Booking Confirmed!</h2>
-              <p className="text-gray-600 mb-6">
-                Your booking request has been submitted. The owner will confirm shortly.
-              </p>
-              <div className="space-y-2">
-                <button
-                  onClick={() => {
-                    setShowBookingModal(false)
-                    router.push('/dashboard')
-                  }}
-                  className="w-full bg-primary-600 hover:bg-primary-700 text-white font-semibold py-3 px-6 rounded-lg transition-colors"
-                >
-                  View Bookings
-                </button>
-                <button
-                  onClick={() => setShowBookingModal(false)}
-                  className="w-full bg-gray-100 hover:bg-gray-200 text-gray-900 font-semibold py-3 px-6 rounded-lg transition-colors"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
-

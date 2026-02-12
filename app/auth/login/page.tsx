@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { FiMail, FiLock, FiLogIn } from 'react-icons/fi'
 import { useStore } from '@/store/useStore'
+import { authApi, apiClient } from '@/lib/api'
 
 function LoginContent() {
   const router = useRouter()
@@ -27,26 +28,25 @@ function LoginContent() {
     setError('')
     setLoading(true)
 
-    // Mock authentication - in real app, call API
-    setTimeout(() => {
-      // Simulate API call
-      if (email && password) {
-        const mockUser = {
-          id: '1',
-          name: email.split('@')[0],
-          email,
-          role: 'both' as const,
-          phone: '+1234567890',
-          createdAt: new Date().toISOString(),
-        }
-        setUser(mockUser)
+    // Real authentication - Connect to API
+    try {
+      const response = await authApi.login({ email, password })
+
+      if (response.success && response.data) {
+        // Set token first so subsequent requests have it
+        apiClient.setToken(response.data.token)
+        setUser(response.data.user)
+
         const redirect = searchParams.get('redirect') || '/dashboard'
         router.push(redirect)
       } else {
-        setError('Please enter email and password')
+        setError(response.message || 'Invalid email or password')
       }
+    } catch (err: any) {
+      setError(err.message || 'An error occurred during login')
+    } finally {
       setLoading(false)
-    }, 500)
+    }
   }
 
   return (
