@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { FiMail, FiLock, FiUser, FiPhone, FiUserPlus } from 'react-icons/fi'
 import { useStore } from '@/store/useStore'
+import { authApi, apiClient } from '@/lib/api'
 
 export default function RegisterPage() {
   const router = useRouter()
@@ -15,7 +16,7 @@ export default function RegisterPage() {
     password: '',
     confirmPassword: '',
     phone: '',
-    role: 'both' as 'buyer' | 'seller' | 'both',
+    role: 'USER' as 'USER' | 'VENDOR',
   })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -42,20 +43,27 @@ export default function RegisterPage() {
 
     setLoading(true)
 
-    // Mock registration - in real app, call API
-    setTimeout(() => {
-      const mockUser = {
-        id: Date.now().toString(),
+    // Real registration - Connect to API
+    try {
+      const response = await authApi.register({
         name: formData.name,
         email: formData.email,
+        password: formData.password,
         role: formData.role,
-        phone: formData.phone,
-        createdAt: new Date().toISOString(),
+      })
+
+      if (response.success && response.data) {
+        apiClient.setToken(response.data.token)
+        setUser(response.data.user)
+        router.push('/dashboard')
+      } else {
+        setError(response.message || 'Registration failed')
       }
-      setUser(mockUser)
+    } catch (err: any) {
+      setError(err.message || 'An error occurred during registration')
+    } finally {
       setLoading(false)
-      router.push('/dashboard')
-    }, 500)
+    }
   }
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -160,9 +168,8 @@ export default function RegisterPage() {
                 onChange={handleChange}
                 className="block w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent text-gray-900"
               >
-                <option value="buyer">Buyer Only</option>
-                <option value="seller">Seller Only</option>
-                <option value="both">Both (Buyer & Seller)</option>
+                <option value="USER">Customer (Rent a car)</option>
+                <option value="VENDOR">Vendor (List your car)</option>
               </select>
             </div>
 

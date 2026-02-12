@@ -1,44 +1,56 @@
 export interface Vehicle {
-  id: string
+  _id: string
   make: string
   model: string
   year: number
-  type: 'sedan' | 'suv' | 'truck' | 'van' | 'luxury' | 'sports' | 'motorcycle'
-  price: number
-  location: string
+  type: 'sedan' | 'suv' | 'truck' | 'van' | 'luxury' | 'sports' | 'motorcycle' | 'convertible'
+  pricePerDay: number
+  price?: number // for compatibility during migration
+  location: {
+    type: string
+    coordinates: [number, number]
+    address: {
+      city: string
+      state?: string
+      country?: string
+      fullAddress: string
+    }
+  }
   images: string[]
   description: string
   features: string[]
-  available: boolean
-  ownerId: string
-  ownerName: string
-  rating: number
-  reviewCount: number
-  mileage?: number
-  fuelType?: 'gasoline' | 'diesel' | 'electric' | 'hybrid'
-  transmission?: 'automatic' | 'manual'
-  seats?: number
+  availability: boolean
+  isApproved: boolean
+  vendor: string | User
   createdAt: string
+  updatedAt: string
 }
 
 export interface Booking {
-  id: string
-  vehicleId: string
-  vehicle: Vehicle
-  userId: string
+  _id: string
+  car: string | Vehicle
+  user: string | User
+  vendor: string | User
   startDate: string
   endDate: string
-  totalPrice: number
-  status: 'pending' | 'confirmed' | 'completed' | 'cancelled'
+  days: number
+  pricePerDay: number
+  subtotal: number
+  platformCommission: number
+  vendorEarnings: number
+  total: number
+  status: 'PENDING' | 'PAID' | 'ACTIVE' | 'COMPLETED' | 'CANCELLED'
   createdAt: string
+  updatedAt: string
 }
 
 export interface User {
-  id: string
+  _id: string
   name: string
   email: string
-  role: 'buyer' | 'seller' | 'both'
+  role: 'USER' | 'VENDOR' | 'ADMIN'
   phone?: string
+  isVendorApproved?: boolean
   avatar?: string
   createdAt: string
 }
